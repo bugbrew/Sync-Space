@@ -10,8 +10,6 @@ app.use(cors());
 const server = http.createServer(app);
 
 // --- MONGODB CONNECTION ---
-// Replace YOUR_ACTUAL_PASSWORD with your real Atlas password.
-// If your password has special characters like @, use a simple one for now.
 const dbURI = process.env.MONGO_URI;
 mongoose
   .connect(dbURI)
@@ -36,7 +34,10 @@ const StrokeSchema = new mongoose.Schema({
 const Stroke = mongoose.model("Stroke", StrokeSchema);
 
 const io = new Server(server, {
-  cors: { origin: "*" },
+  cors: {
+    origin: "https://vercel.com/mehak-portfolio/sync-space",
+    methods: ["GET", "POST"],
+  },
 });
 
 io.on("connection", async (socket) => {

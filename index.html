@@ -1,8 +1,10 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
-    <title>SyncSpace Pro - Tools & Names</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SyncSpace Pro - Collaborative Whiteboard</title>
     <style>
         body {
             margin: 0;
@@ -17,7 +19,6 @@
             cursor: crosshair;
         }
 
-        /* Toolbar Styling */
         .toolbar {
             position: fixed;
             top: 20px;
@@ -58,7 +59,6 @@
             color: #fff;
         }
 
-        /* Ghost Cursors with Names */
         .cursor {
             position: fixed;
             width: 12px;
@@ -97,13 +97,14 @@
     <canvas id="whiteboard"></canvas>
 
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-    <script>
-        const myName = prompt("Enter your name to join SyncSpace:") || "Guest";
-        const socket = io("https://sync-space.onrender.com");
-        socket.emit('join_workspace', myName);
 
+    <script>
+        // 1. UI & CANVAS INITIALIZATION
+        const myName = prompt("Enter your name to join SyncSpace:") || "Guest";
         const canvas = document.getElementById('whiteboard');
         const ctx = canvas.getContext('2d');
+
+        // Ensure canvas matches window size exactly
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
 
@@ -112,29 +113,7 @@
         let currentColor = '#000000';
         let lastPos = { x: 0, y: 0 };
 
-        // --- TOOL LOGIC ---
-        function setColor(color, el) {
-            currentColor = color;
-            currentTool = 'pencil';
-            document.querySelectorAll('.color-circle, .tool-btn').forEach(b => b.classList.remove('active'));
-            el.classList.add('active');
-        }
-
-        function setEraser() {
-            currentTool = 'eraser';
-            document.querySelectorAll('.color-circle, .tool-btn').forEach(b => b.classList.remove('active'));
-            document.getElementById('eraserBtn').classList.add('active');
-        }
-
-        function clearCanvas() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-                if (confirm("This will delete the drawing for EVERYONE. Are you sure?")) {
-                    socket.emit('clear_board'); // This tells the server to wipe the DB
-                }
-            // Optional: socket.emit('clear_board') to clear for everyone!
-        }
-
-        // --- DRAWING CORE ---
+        // 2. CORE DRAWING FUNCTION
         function drawLine(x0, y0, x1, y1, color, width, emit) {
             ctx.beginPath();
             ctx.moveTo(x0, y0);
@@ -145,51 +124,33 @@
             ctx.stroke();
             ctx.closePath();
 
-            if (!emit) return;
+            if (!emit) return; // Important: Don't re-emit if drawing history/others' lines
             socket.emit('drawing_data', { x0, y0, x1, y1, color, width });
         }
 
-        canvas.addEventListener('mousedown', (e) => {
-            drawing = true;
-            lastPos = { x: e.clientX, y: e.clientY };
+        // 3. CONNECT TO BACKEND
+        const socket = io("https://sync-space.onrender.com");
+
+        // 4. SOCKET LISTENERS (Setup before doing any emitting)
+        socket.on('connect', () => {
+            console.log("Connected to server! ID:", socket.id);
+            socket.emit('join_workspace', myName);
         });
 
-        canvas.addEventListener('mouseup', () => drawing = false);
-
-        canvas.addEventListener('mousemove', (e) => {
-            socket.emit('cursor_move', { x: e.clientX, y: e.clientY });
-
-            if (!drawing) return;
-
-            const width = (currentTool === 'eraser') ? 40 : 3;
-            const color = (currentTool === 'eraser') ? '#ffffff' : currentColor;
-
-            drawLine(lastPos.x, lastPos.y, e.clientX, e.clientY, color, width, true);
-            lastPos = { x: e.clientX, y: e.clientY };
+        // This is the specific fix for the "Third Window" issue
+        socket.on('drawing_history', (history) => {
+            console.log("📦 History Received from DB:", history.length, "strokes");
+            history.forEach(stroke => {
+                drawLine(stroke.x0, stroke.y0, stroke.x1, stroke.y1, stroke.color, stroke.width, false);
+            });
         });
 
-        // Listen for the history when we first connect
-            socket.on('drawing_history', (history) => {
-                history.forEach(stroke => {
-                    drawLine(stroke.x0, stroke.y0, stroke.x1, stroke.y1, stroke.color, stroke.width, false);
-                });
-            });
-
-            // Listener for the "Clear All" button
-            socket.on('clear_board_ui', () => {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-            });
-
-            // Update your existing clearCanvas function
-            function clearCanvas() {
-                if (confirm("Clear board for everyone?")) {
-                    socket.emit('clear_board');
-                }
-            }
-
-        // --- SOCKET LISTENERS ---
         socket.on('receive_drawing', (data) => {
             drawLine(data.x0, data.y0, data.x1, data.y1, data.color, data.width, false);
+        });
+
+        socket.on('clear_board_ui', () => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
         });
 
         socket.on('receive_cursor', (data) => {
@@ -212,6 +173,56 @@
         socket.on('user_disconnected', (id) => {
             const el = document.getElementById(id);
             if (el) el.remove();
+        });
+
+        // 5. TOOLBAR & MOUSE EVENTS
+        function setColor(color, el) {
+            currentColor = color;
+            currentTool = 'pencil';
+            document.querySelectorAll('.color-circle, .tool-btn').forEach(b => b.classList.remove('active'));
+            el.classList.add('active');
+        }
+
+        function setEraser() {
+            currentTool = 'eraser';
+            document.querySelectorAll('.color-circle, .tool-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById('eraserBtn').classList.add('active');
+        }
+
+        function clearCanvas() {
+            if (confirm("Clear board for everyone?")) {
+                socket.emit('clear_board');
+            }
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            drawing = true;
+            lastPos = { x: e.clientX, y: e.clientY };
+        });
+
+        canvas.addEventListener('mouseup', () => drawing = false);
+
+        canvas.addEventListener('mousemove', (e) => {
+            // Update cursor position for others
+            socket.emit('cursor_move', { x: e.clientX, y: e.clientY });
+
+            if (!drawing) return;
+
+            const width = (currentTool === 'eraser') ? 40 : 3;
+            const color = (currentTool === 'eraser') ? '#ffffff' : currentColor;
+
+            drawLine(lastPos.x, lastPos.y, e.clientX, e.clientY, color, width, true);
+            lastPos = { x: e.clientX, y: e.clientY };
+        });
+
+        // Handle window resizing to prevent drawing loss
+        window.addEventListener('resize', () => {
+            // Optional: You could save canvas data here, resize, then redraw
+            // For now, we just ensure the internal width matches the screen
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            // Ask for history again if resize clears the canvas
+            socket.emit('request_history');
         });
     </script>
 </body>
