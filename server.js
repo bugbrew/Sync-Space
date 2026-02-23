@@ -87,6 +87,5 @@ io.on("connection", async (socket) => {
   });
 });
 
-server.listen(4000, () =>
-  console.log(`🚀 Persistent Server running on http://localhost:4000`),
-);
+const PORT = process.env.PORT || 4000;
+server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));

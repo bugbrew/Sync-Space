@@ -99,7 +99,7 @@
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <script>
         const myName = prompt("Enter your name to join SyncSpace:") || "Guest";
-        const socket = io("http://localhost:4000");
+        const socket = io("https://sync-space.onrender.com");
         socket.emit('join_workspace', myName);
 
         const canvas = document.getElementById('whiteboard');
