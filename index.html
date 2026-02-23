@@ -4,54 +4,78 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SyncSpace Pro - Collaborative Whiteboard</title>
+    <title>SyncSpace Pro | Collaborative Canvas</title>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
+
         body {
             margin: 0;
             overflow: hidden;
             font-family: 'Inter', sans-serif;
-            background: #eee;
+            background-color: #f8f9fa;
+            background-image: radial-gradient(#d1d1d1 1px, transparent 1px);
+            background-size: 30px 30px;
         }
 
         canvas {
             display: block;
-            background: white;
             cursor: crosshair;
         }
 
+        /* Modern Floating Toolbar */
         .toolbar {
             position: fixed;
-            top: 20px;
+            bottom: 30px;
             left: 50%;
             transform: translateX(-50%);
-            background: white;
-            padding: 10px 20px;
-            border-radius: 50px;
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            padding: 12px 20px;
+            border-radius: 24px;
             display: flex;
             gap: 15px;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
             align-items: center;
             z-index: 1000;
         }
 
+        .section {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border-right: 1px solid #ddd;
+            padding-right: 15px;
+        }
+
+        .section:last-child {
+            border: none;
+            padding-right: 0;
+        }
+
         .color-circle {
-            width: 25px;
-            height: 25px;
+            width: 24px;
+            height: 24px;
             border-radius: 50%;
             cursor: pointer;
-            border: 2px solid transparent;
+            border: 3px solid white;
+            transition: transform 0.2s;
         }
 
         .color-circle.active {
-            border-color: #000;
+            border-color: #007bff;
+            transform: scale(1.1);
         }
 
         .tool-btn {
-            padding: 5px 15px;
+            background: none;
+            border: none;
+            padding: 8px 14px;
+            font-weight: 600;
+            color: #555;
             cursor: pointer;
-            border-radius: 20px;
-            border: 1px solid #ddd;
-            background: #fff;
+            border-radius: 12px;
+            transition: 0.2s;
         }
 
         .tool-btn.active {
@@ -59,6 +83,11 @@
             color: #fff;
         }
 
+        .btn-danger {
+            color: #ff4757;
+        }
+
+        /* Cursor Tags */
         .cursor {
             position: fixed;
             width: 12px;
@@ -66,7 +95,7 @@
             border-radius: 50%;
             pointer-events: none;
             z-index: 100;
-            transition: left 0.1s linear, top 0.1s linear;
+            transition: 0.1s linear;
         }
 
         .cursor-label {
@@ -75,36 +104,69 @@
             left: 10px;
             background: #333;
             color: white;
-            font-size: 11px;
+            font-size: 10px;
             padding: 2px 8px;
             border-radius: 10px;
             white-space: nowrap;
+        }
+
+        .status-badge {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: white;
+            padding: 8px 15px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            background: #2ed573;
+            border-radius: 50%;
         }
     </style>
 </head>
 
 <body>
 
+    <div class="status-badge">
+        <div class="dot"></div><span>SyncSpace Live</span>
+    </div>
+
     <div class="toolbar">
-        <div class="color-circle active" style="background: #000000;" onclick="setColor('#000000', this)"></div>
-        <div class="color-circle" style="background: #ff4757;" onclick="setColor('#ff4757', this)"></div>
-        <div class="color-circle" style="background: #2ed573;" onclick="setColor('#2ed573', this)"></div>
-        <div class="color-circle" style="background: #1e90ff;" onclick="setColor('#1e90ff', this)"></div>
-        <button class="tool-btn" id="eraserBtn" onclick="setEraser()">Eraser</button>
-        <button class="tool-btn" onclick="clearCanvas()">Clear All</button>
+        <div class="section">
+            <div class="color-circle active" style="background: #000;" onclick="setColor('#000000', this)"></div>
+            <div class="color-circle" style="background: #ff4757;" onclick="setColor('#ff4757', this)"></div>
+            <div class="color-circle" style="background: #1e90ff;" onclick="setColor('#1e90ff', this)"></div>
+            <div class="color-circle" style="background: #2ed573;" onclick="setColor('#2ed573', this)"></div>
+        </div>
+        <div class="section">
+            <button class="tool-btn active" id="pencilBtn" onclick="setTool('pencil', this)">Pencil</button>
+            <button class="tool-btn" id="eraserBtn" onclick="setTool('eraser', this)">Eraser</button>
+        </div>
+        <div class="section">
+            <button class="tool-btn btn-danger" onclick="clearCanvas()">Clear</button>
+            <button class="tool-btn" onclick="downloadImage()" style="color: #007bff;">Export</button>
+        </div>
     </div>
 
     <canvas id="whiteboard"></canvas>
 
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-
     <script>
-        // 1. UI & CANVAS INITIALIZATION
-        const myName = prompt("Enter your name to join SyncSpace:") || "Guest";
+        const myName = prompt("Join SyncSpace as:") || "Guest";
+        // UPDATE THIS URL TO YOUR RENDER URL
+        const socket = io("https://sync-space.onrender.com");
+
         const canvas = document.getElementById('whiteboard');
         const ctx = canvas.getContext('2d');
-
-        // Ensure canvas matches window size exactly
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
 
@@ -113,117 +175,71 @@
         let currentColor = '#000000';
         let lastPos = { x: 0, y: 0 };
 
-        // 2. CORE DRAWING FUNCTION
         function drawLine(x0, y0, x1, y1, color, width, emit) {
-            ctx.beginPath();
-            ctx.moveTo(x0, y0);
-            ctx.lineTo(x1, y1);
-            ctx.strokeStyle = color;
-            ctx.lineWidth = width;
-            ctx.lineCap = 'round';
-            ctx.stroke();
-            ctx.closePath();
+                ctx.beginPath();
 
-            if (!emit) return; // Important: Don't re-emit if drawing history/others' lines
-            socket.emit('drawing_data', { x0, y0, x1, y1, color, width });
-        }
+                // --- THE FIX STARTS HERE ---
+                if (color === '#ffffff' || currentTool === 'eraser') {
+                    ctx.globalCompositeOperation = 'destination-out'; // This "cuts" a hole in the paint
+                } else {
+                    ctx.globalCompositeOperation = 'source-over'; // This is normal painting
+                }
+                // --- THE FIX ENDS HERE ---
 
-        // 3. CONNECT TO BACKEND
-        const socket = io("https://sync-space.onrender.com");
+                ctx.moveTo(x0, y0);
+                ctx.lineTo(x1, y1);
+                ctx.strokeStyle = color;
+                ctx.lineWidth = width;
+                ctx.lineCap = 'round';
+                ctx.stroke();
+                ctx.closePath();
 
-        // 4. SOCKET LISTENERS (Setup before doing any emitting)
-        socket.on('connect', () => {
-            console.log("Connected to server! ID:", socket.id);
-            socket.emit('join_workspace', myName);
+                if (emit) socket.emit('drawing_data', { x0, y0, x1, y1, color, width });
+            }
+
+        canvas.addEventListener('mousedown', (e) => { drawing = true; lastPos = { x: e.clientX, y: e.clientY }; });
+        canvas.addEventListener('mouseup', () => drawing = false);
+        canvas.addEventListener('mousemove', (e) => {
+            socket.emit('cursor_move', { x: e.clientX, y: e.clientY });
+            if (!drawing) return;
+            const w = currentTool === 'eraser' ? 40 : 3;
+            const c = currentTool === 'eraser' ? '#ffffff' : currentColor;
+            drawLine(lastPos.x, lastPos.y, e.clientX, e.clientY, c, w, true);
+            lastPos = { x: e.clientX, y: e.clientY };
         });
 
-        // This is the specific fix for the "Third Window" issue
-        socket.on('drawing_history', (history) => {
-            console.log("📦 History Received from DB:", history.length, "strokes");
-            history.forEach(stroke => {
-                drawLine(stroke.x0, stroke.y0, stroke.x1, stroke.y1, stroke.color, stroke.width, false);
-            });
-        });
-
-        socket.on('receive_drawing', (data) => {
-            drawLine(data.x0, data.y0, data.x1, data.y1, data.color, data.width, false);
-        });
-
-        socket.on('clear_board_ui', () => {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-        });
+        socket.on('connect', () => socket.emit('join_workspace', myName));
+        socket.on('drawing_history', (h) => h.forEach(s => drawLine(s.x0, s.y0, s.x1, s.y1, s.color, s.width, false)));
+        socket.on('receive_drawing', (d) => drawLine(d.x0, d.y0, d.x1, d.y1, d.color, d.width, false));
+        socket.on('clear_board_ui', () => ctx.clearRect(0, 0, canvas.width, canvas.height));
 
         socket.on('receive_cursor', (data) => {
             let el = document.getElementById(data.id);
             if (!el) {
-                el = document.createElement('div');
-                el.id = data.id;
-                el.className = 'cursor';
+                el = document.createElement('div'); el.id = data.id; el.className = 'cursor';
                 el.style.backgroundColor = `hsl(${Math.random() * 360}, 70%, 50%)`;
-                const label = document.createElement('div');
-                label.className = 'cursor-label';
-                el.appendChild(label);
-                document.body.appendChild(el);
+                const l = document.createElement('div'); l.className = 'cursor-label';
+                el.appendChild(l); document.body.appendChild(el);
             }
             el.querySelector('.cursor-label').innerText = data.username;
-            el.style.left = data.x + 'px';
-            el.style.top = data.y + 'px';
+            el.style.left = data.x + 'px'; el.style.top = data.y + 'px';
         });
 
-        socket.on('user_disconnected', (id) => {
-            const el = document.getElementById(id);
-            if (el) el.remove();
-        });
-
-        // 5. TOOLBAR & MOUSE EVENTS
-        function setColor(color, el) {
-            currentColor = color;
-            currentTool = 'pencil';
-            document.querySelectorAll('.color-circle, .tool-btn').forEach(b => b.classList.remove('active'));
+        function setColor(c, el) {
+            currentColor = c; setTool('pencil', document.getElementById('pencilBtn'));
+            document.querySelectorAll('.color-circle').forEach(d => d.classList.remove('active'));
             el.classList.add('active');
         }
 
-        function setEraser() {
-            currentTool = 'eraser';
-            document.querySelectorAll('.color-circle, .tool-btn').forEach(b => b.classList.remove('active'));
-            document.getElementById('eraserBtn').classList.add('active');
+        function setTool(t, el) {
+            currentTool = t;
+            document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+            el.classList.add('active');
         }
 
-        function clearCanvas() {
-            if (confirm("Clear board for everyone?")) {
-                socket.emit('clear_board');
-            }
-        }
-
-        canvas.addEventListener('mousedown', (e) => {
-            drawing = true;
-            lastPos = { x: e.clientX, y: e.clientY };
-        });
-
-        canvas.addEventListener('mouseup', () => drawing = false);
-
-        canvas.addEventListener('mousemove', (e) => {
-            // Update cursor position for others
-            socket.emit('cursor_move', { x: e.clientX, y: e.clientY });
-
-            if (!drawing) return;
-
-            const width = (currentTool === 'eraser') ? 40 : 3;
-            const color = (currentTool === 'eraser') ? '#ffffff' : currentColor;
-
-            drawLine(lastPos.x, lastPos.y, e.clientX, e.clientY, color, width, true);
-            lastPos = { x: e.clientX, y: e.clientY };
-        });
-
-        // Handle window resizing to prevent drawing loss
-        window.addEventListener('resize', () => {
-            // Optional: You could save canvas data here, resize, then redraw
-            // For now, we just ensure the internal width matches the screen
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-            // Ask for history again if resize clears the canvas
-            socket.emit('request_history');
-        });
+        function clearCanvas() { if (confirm("Clear board for all?")) socket.emit('clear_board'); }
+        function downloadImage() { const a = document.createElement('a'); a.download = 'syncspace.png'; a.href = canvas.toDataURL(); a.click(); }
+        window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; });
     </script>
 </body>
 
