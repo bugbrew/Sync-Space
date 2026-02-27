@@ -6,7 +6,7 @@ const cors = require("cors");
 const mongoose = require("mongoose");
 
 const app = express();
-app.use(cors());
+app.use(cors()); // Global express cors
 const server = http.createServer(app);
 
 // --- 1. DB CONNECTION ---
@@ -28,10 +28,10 @@ const StrokeSchema = new mongoose.Schema({
 });
 const Stroke = mongoose.model("Stroke", StrokeSchema);
 
-// --- 2. SOCKET SERVER WITH YOUR VERCEL LINK ---
+// --- 2. SOCKET SERVER (CORS FIX) ---
 const io = new Server(server, {
   cors: {
-    origin: ["http://127.0.0.1:5500", "http://localhost:5500", "*"],
+    origin: "*", // Allows local testing (127.0.0.1) AND Vercel automatically
     methods: ["GET", "POST"],
     credentials: true,
   },
@@ -40,7 +40,7 @@ const io = new Server(server, {
 io.on("connection", async (socket) => {
   console.log(`User connected: ${socket.id}`);
 
-  // Fetch and send history
+  // Fetch history
   try {
     const history = await Stroke.find().sort({ timestamp: 1 });
     socket.emit("drawing_history", history);

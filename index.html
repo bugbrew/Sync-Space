@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SyncSpace Pro | Collaborative Canvas</title>
+    <title>SyncSpace Pro | Live Collaboration</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
 
@@ -22,7 +22,6 @@
             cursor: crosshair;
         }
 
-        /* Floating Glass Toolbar */
         .toolbar {
             position: fixed;
             bottom: 30px;
@@ -87,7 +86,6 @@
             color: #ff4757;
         }
 
-        /* Cursor Styling */
         .cursor {
             position: fixed;
             width: 12px;
@@ -135,11 +133,9 @@
 </head>
 
 <body>
-
     <div class="status-badge">
         <div class="dot"></div><span>SyncSpace Live</span>
     </div>
-
     <div class="toolbar">
         <div class="section">
             <div class="color-circle active" style="background: #000;" onclick="setColor('#000000', this)"></div>
@@ -156,41 +152,27 @@
             <button class="tool-btn" onclick="downloadImage()" style="color: #007bff;">Export</button>
         </div>
     </div>
-
     <canvas id="whiteboard"></canvas>
-
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <script>
-        // Prompt user immediately
         const myName = prompt("Join SyncSpace as:") || "Guest";
-
-        // Connect to your Render URL
         const socket = io("https://sync-space.onrender.com");
-
         const canvas = document.getElementById('whiteboard');
         const ctx = canvas.getContext('2d');
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
-
-        let drawing = false;
-        let currentTool = 'pencil';
-        let currentColor = '#000000';
-        let lastPos = { x: 0, y: 0 };
+        let drawing = false, currentTool = 'pencil', currentColor = '#000000', lastPos = { x: 0, y: 0 };
 
         function drawLine(x0, y0, x1, y1, color, width, emit) {
             ctx.beginPath();
-
-            // Handle Transparent Eraser (doesn't wipe grid)
             if (color === '#ffffff' || (emit && currentTool === 'eraser')) {
                 ctx.globalCompositeOperation = 'destination-out';
             } else {
                 ctx.globalCompositeOperation = 'source-over';
             }
-
             ctx.moveTo(x0, y0); ctx.lineTo(x1, y1);
             ctx.strokeStyle = color; ctx.lineWidth = width;
             ctx.lineCap = 'round'; ctx.stroke();
-
             if (emit) socket.emit('drawing_data', { x0, y0, x1, y1, color, width });
         }
 
@@ -206,23 +188,17 @@
         });
 
         socket.on('connect', () => socket.emit('join_workspace', myName));
-
         socket.on('drawing_history', (h) => {
             h.forEach(s => drawLine(s.x0, s.y0, s.x1, s.y1, s.color, s.width, false));
-            ctx.globalCompositeOperation = 'source-over'; // Reset after history load
+            ctx.globalCompositeOperation = 'source-over';
         });
-
         socket.on('receive_drawing', (d) => {
-            // If the incoming color is white, treat it as an eraser stroke
             if (d.color === '#ffffff') ctx.globalCompositeOperation = 'destination-out';
             else ctx.globalCompositeOperation = 'source-over';
-
             drawLine(d.x0, d.y0, d.x1, d.y1, d.color, d.width, false);
-            ctx.globalCompositeOperation = 'source-over'; // Reset
+            ctx.globalCompositeOperation = 'source-over';
         });
-
         socket.on('clear_board_ui', () => ctx.clearRect(0, 0, canvas.width, canvas.height));
-
         socket.on('receive_cursor', (data) => {
             let el = document.getElementById(data.id);
             if (!el) {
@@ -234,34 +210,12 @@
             el.querySelector('.cursor-label').innerText = data.username;
             el.style.left = data.x + 'px'; el.style.top = data.y + 'px';
         });
-
-        socket.on('user_disconnected', (id) => {
-            const el = document.getElementById(id);
-            if (el) el.remove();
-        });
-
-        function setColor(c, el) {
-            currentColor = c; setTool('pencil', document.getElementById('pencilBtn'));
-            document.querySelectorAll('.color-circle').forEach(d => d.classList.remove('active'));
-            el.classList.add('active');
-        }
-
-        function setTool(t, el) {
-            currentTool = t;
-            document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
-            el.classList.add('active');
-        }
-
+        socket.on('user_disconnected', (id) => { const el = document.getElementById(id); if (el) el.remove(); });
+        function setColor(c, el) { currentColor = c; setTool('pencil', document.getElementById('pencilBtn')); document.querySelectorAll('.color-circle').forEach(d => d.classList.remove('active')); el.classList.add('active'); }
+        function setTool(t, el) { currentTool = t; document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active')); el.classList.add('active'); }
         function clearCanvas() { if (confirm("Clear board for all?")) socket.emit('clear_board'); }
-
-        function downloadImage() {
-            const a = document.createElement('a'); a.download = 'syncspace-drawing.png';
-            a.href = canvas.toDataURL(); a.click();
-        }
-
-        window.addEventListener('resize', () => {
-            canvas.width = window.innerWidth; canvas.height = window.innerHeight;
-        });
+        function downloadImage() { const a = document.createElement('a'); a.download = 'syncspace.png'; a.href = canvas.toDataURL(); a.click(); }
+        window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; });
     </script>
 </body>
 
