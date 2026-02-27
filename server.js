@@ -6,25 +6,17 @@ const cors = require("cors");
 const mongoose = require("mongoose");
 
 const app = express();
-
-// 1. MIDDLEWARE
-// origin: "*" allows your Vercel frontend to talk to this Render backend easily
 app.use(cors());
-
 const server = http.createServer(app);
 
-// 2. MONGODB CONNECTION
-// Ensure MONGO_URI is set in your Render "Environment" tab
+// --- 1. DB CONNECTION ---
 const dbURI = process.env.MONGO_URI;
 
 mongoose
   .connect(dbURI)
   .then(() => console.log("Connected to MongoDB Atlas ✅"))
-  .catch((err) => {
-    console.error("❌ DB Connection Error:", err.message);
-  });
+  .catch((err) => console.error("❌ DB Connection Error:", err.message));
 
-// Blueprint for a drawing stroke
 const StrokeSchema = new mongoose.Schema({
   x0: Number,
   y0: Number,
@@ -36,41 +28,37 @@ const StrokeSchema = new mongoose.Schema({
 });
 const Stroke = mongoose.model("Stroke", StrokeSchema);
 
-// 3. SOCKET.IO SETUP
+// --- 2. SOCKET SERVER WITH YOUR VERCEL LINK ---
 const io = new Server(server, {
   cors: {
-    origin: "https://vercel.com/mehak-portfolio/sync-space",
+    origin: ["http://127.0.0.1:5500", "http://localhost:5500", "*"],
     methods: ["GET", "POST"],
+    credentials: true,
   },
 });
 
 io.on("connection", async (socket) => {
   console.log(`User connected: ${socket.id}`);
 
-  // Fetch history from DB and send it to the new user immediately
+  // Fetch and send history
   try {
     const history = await Stroke.find().sort({ timestamp: 1 });
     socket.emit("drawing_history", history);
   } catch (err) {
-    console.error("Error fetching history:", err.message);
+    console.error("History fetch error:", err.message);
   }
 
-  // Set username for the session
   socket.on("join_workspace", (name) => {
     socket.username = name;
+    console.log(`${name} joined`);
   });
 
-  // Handle incoming drawing data
   socket.on("drawing_data", (data) => {
-    // 1. Broadcast to everyone else immediately (Real-time speed)
     socket.broadcast.emit("receive_drawing", data);
-
-    // 2. Save to database in the background
     const newStroke = new Stroke(data);
-    newStroke.save().catch((err) => console.error("Save failed:", err.message));
+    newStroke.save().catch((err) => console.error("Save error:", err.message));
   });
 
-  // Handle cursor movements
   socket.on("cursor_move", (data) => {
     socket.broadcast.emit("receive_cursor", {
       ...data,
@@ -79,14 +67,9 @@ io.on("connection", async (socket) => {
     });
   });
 
-  // Clear board for everyone and the DB
   socket.on("clear_board", async () => {
-    try {
-      await Stroke.deleteMany({});
-      io.emit("clear_board_ui");
-    } catch (err) {
-      console.error("Clear error:", err.message);
-    }
+    await Stroke.deleteMany({});
+    io.emit("clear_board_ui");
   });
 
   socket.on("disconnect", () => {
@@ -94,9 +77,5 @@ io.on("connection", async (socket) => {
   });
 });
 
-// 4. START SERVER
-// Render uses process.env.PORT, otherwise defaults to 4000 for local testing
 const PORT = process.env.PORT || 4000;
-server.listen(PORT, () => {
-  console.log(`🚀 SyncSpace Server running on port ${PORT}`);
-});
+server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));

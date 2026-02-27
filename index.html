@@ -22,7 +22,7 @@
             cursor: crosshair;
         }
 
-        /* Modern Floating Toolbar */
+        /* Floating Glass Toolbar */
         .toolbar {
             position: fixed;
             bottom: 30px;
@@ -87,7 +87,7 @@
             color: #ff4757;
         }
 
-        /* Cursor Tags */
+        /* Cursor Styling */
         .cursor {
             position: fixed;
             width: 12px;
@@ -161,8 +161,10 @@
 
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <script>
+        // Prompt user immediately
         const myName = prompt("Join SyncSpace as:") || "Guest";
-        // UPDATE THIS URL TO YOUR RENDER URL
+
+        // Connect to your Render URL
         const socket = io("https://sync-space.onrender.com");
 
         const canvas = document.getElementById('whiteboard');
@@ -176,26 +178,21 @@
         let lastPos = { x: 0, y: 0 };
 
         function drawLine(x0, y0, x1, y1, color, width, emit) {
-                ctx.beginPath();
+            ctx.beginPath();
 
-                // --- THE FIX STARTS HERE ---
-                if (color === '#ffffff' || currentTool === 'eraser') {
-                    ctx.globalCompositeOperation = 'destination-out'; // This "cuts" a hole in the paint
-                } else {
-                    ctx.globalCompositeOperation = 'source-over'; // This is normal painting
-                }
-                // --- THE FIX ENDS HERE ---
-
-                ctx.moveTo(x0, y0);
-                ctx.lineTo(x1, y1);
-                ctx.strokeStyle = color;
-                ctx.lineWidth = width;
-                ctx.lineCap = 'round';
-                ctx.stroke();
-                ctx.closePath();
-
-                if (emit) socket.emit('drawing_data', { x0, y0, x1, y1, color, width });
+            // Handle Transparent Eraser (doesn't wipe grid)
+            if (color === '#ffffff' || (emit && currentTool === 'eraser')) {
+                ctx.globalCompositeOperation = 'destination-out';
+            } else {
+                ctx.globalCompositeOperation = 'source-over';
             }
+
+            ctx.moveTo(x0, y0); ctx.lineTo(x1, y1);
+            ctx.strokeStyle = color; ctx.lineWidth = width;
+            ctx.lineCap = 'round'; ctx.stroke();
+
+            if (emit) socket.emit('drawing_data', { x0, y0, x1, y1, color, width });
+        }
 
         canvas.addEventListener('mousedown', (e) => { drawing = true; lastPos = { x: e.clientX, y: e.clientY }; });
         canvas.addEventListener('mouseup', () => drawing = false);
@@ -209,8 +206,21 @@
         });
 
         socket.on('connect', () => socket.emit('join_workspace', myName));
-        socket.on('drawing_history', (h) => h.forEach(s => drawLine(s.x0, s.y0, s.x1, s.y1, s.color, s.width, false)));
-        socket.on('receive_drawing', (d) => drawLine(d.x0, d.y0, d.x1, d.y1, d.color, d.width, false));
+
+        socket.on('drawing_history', (h) => {
+            h.forEach(s => drawLine(s.x0, s.y0, s.x1, s.y1, s.color, s.width, false));
+            ctx.globalCompositeOperation = 'source-over'; // Reset after history load
+        });
+
+        socket.on('receive_drawing', (d) => {
+            // If the incoming color is white, treat it as an eraser stroke
+            if (d.color === '#ffffff') ctx.globalCompositeOperation = 'destination-out';
+            else ctx.globalCompositeOperation = 'source-over';
+
+            drawLine(d.x0, d.y0, d.x1, d.y1, d.color, d.width, false);
+            ctx.globalCompositeOperation = 'source-over'; // Reset
+        });
+
         socket.on('clear_board_ui', () => ctx.clearRect(0, 0, canvas.width, canvas.height));
 
         socket.on('receive_cursor', (data) => {
@@ -223,6 +233,11 @@
             }
             el.querySelector('.cursor-label').innerText = data.username;
             el.style.left = data.x + 'px'; el.style.top = data.y + 'px';
+        });
+
+        socket.on('user_disconnected', (id) => {
+            const el = document.getElementById(id);
+            if (el) el.remove();
         });
 
         function setColor(c, el) {
@@ -238,8 +253,15 @@
         }
 
         function clearCanvas() { if (confirm("Clear board for all?")) socket.emit('clear_board'); }
-        function downloadImage() { const a = document.createElement('a'); a.download = 'syncspace.png'; a.href = canvas.toDataURL(); a.click(); }
-        window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; });
+
+        function downloadImage() {
+            const a = document.createElement('a'); a.download = 'syncspace-drawing.png';
+            a.href = canvas.toDataURL(); a.click();
+        }
+
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+        });
     </script>
 </body>
 
