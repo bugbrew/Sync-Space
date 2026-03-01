@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>SyncSpace - Live Drawing</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            text-align: center;
+            background: #f0f0f0;
+        }
+
+        #toolbar {
+            background: #333;
+            color: white;
+            padding: 10px;
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            align-items: center;
+        }
+
+        canvas {
+            background: white;
+            border: 2px solid #000;
+            cursor: crosshair;
+            margin-top: 20px;
+        }
+
+        .cursor-label {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            font-size: 10px;
+            padding: 2px 5px;
+            pointer-events: none;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="toolbar">
+        <input type="color" id="colorPicker" value="#000000">
+        <button onclick="setTool('brush')">Brush</button>
+        <button onclick="setTool('eraser')">Eraser</button>
+        <input type="range" id="sizePicker" min="1" max="20" value="5">
+        <span id="nameTag"></span>
+    </div>
+
+    <div style="position: relative; display: inline-block;">
+        <canvas id="canvas" width="1000" height="600"></canvas>
+        <div id="cursors-container"></div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script>
+        const socket = io("http://localhost:5000"); // Change to your Render URL after deploying
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const name = prompt("Enter your name:") || "Guest";
+
+        let drawing = false;
+        let tool = 'brush';
+        let lastPos = { x: 0, y: 0 };
+
+        function setTool(t) { tool = t; }
+
+        // Socket Listeners
+        socket.on('draw-data', (data) => draw(data.x, data.y, data.lastX, data.lastY, data.color, data.size));
+
+        socket.on('load-canvas', (dataURL) => {
+            const img = new Image();
+            img.onload = () => ctx.drawImage(img, 0, 0);
+            img.src = dataURL;
+        });
+
+        socket.on('cursor-update', (data) => {
+            let el = document.getElementById(`cursor-${data.id}`);
+            if (!el) {
+                el = document.createElement('div');
+                el.id = `cursor-${data.id}`;
+                el.className = 'cursor-label';
+                document.getElementById('cursors-container').appendChild(el);
+            }
+            el.style.left = data.x + "px";
+            el.style.top = data.y + "px";
+            el.innerText = data.name;
+        });
+
+        // Drawing Logic
+        canvas.onmousedown = (e) => {
+            drawing = true;
+            lastPos = { x: e.offsetX, y: e.offsetY };
+        };
+
+        canvas.onmousemove = (e) => {
+            socket.emit('cursor-move', { x: e.offsetX, y: e.offsetY, name });
+            if (!drawing) return;
+
+            const color = tool === 'eraser' ? '#FFFFFF' : document.getElementById('colorPicker').value;
+            const size = document.getElementById('sizePicker').value;
+
+            draw(e.offsetX, e.offsetY, lastPos.x, lastPos.y, color, size);
+            socket.emit('draw-data', { x: e.offsetX, y: e.offsetY, lastX: lastPos.x, lastY: lastPos.y, color, size });
+            lastPos = { x: e.offsetX, y: e.offsetY };
+        };
+
+        canvas.onmouseup = () => {
+            drawing = false;
+            socket.emit('save-to-db', canvas.toDataURL());
+        };
+
+        function draw(x, y, lx, ly, c, s) {
+            ctx.strokeStyle = c;
+            ctx.lineWidth = s;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(lx, ly);
+            ctx.lineTo(x, y);
+            ctx.stroke();
+        }
+    </script>
+</body>
+
+</html>
