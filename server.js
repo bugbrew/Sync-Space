@@ -1,81 +1,63 @@
-require("dotenv").config();
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
-const cors = require("cors");
 const mongoose = require("mongoose");
+const cors = require("cors");
 
 const app = express();
-app.use(cors()); // Global express cors
-const server = http.createServer(app);
-
-// --- 1. DB CONNECTION ---
-const dbURI = process.env.MONGO_URI;
-
-mongoose
-  .connect(dbURI)
-  .then(() => console.log("Connected to MongoDB Atlas ✅"))
-  .catch((err) => console.error("❌ DB Connection Error:", err.message));
-
-const StrokeSchema = new mongoose.Schema({
-  x0: Number,
-  y0: Number,
-  x1: Number,
-  y1: Number,
-  color: String,
-  width: Number,
-  timestamp: { type: Date, default: Date.now },
-});
-const Stroke = mongoose.model("Stroke", StrokeSchema);
-
-// --- 2. SOCKET SERVER (CORS FIX) ---
-const io = new Server(server, {
-  cors: {
-    origin: "*", // Allows local testing (127.0.0.1) AND Vercel automatically
+app.use(
+  cors({
+    origin: "https://sync-space-six.vercel.app", // Your specific Vercel deployment URL
     methods: ["GET", "POST"],
-    credentials: true,
-  },
+  }),
+);
+
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: "https://sync-space-six.vercel.app" },
 });
+
+// Database Connection
+const MONGO_URI =
+  "mongodb+srv://esha28102005_db_user:esha28102005_db_user@cluster0.6nk7eyc.mongodb.net/SyncSpace?retryWrites=true&w=majority";
+mongoose
+  .connect(MONGO_URI)
+  .then(() => console.log("Connected to MongoDB Cluster0"))
+  .catch((err) => console.error("DB Connection Error:", err));
+
+const DrawingSchema = new mongoose.Schema({
+  canvasData: String, // Base64 string of the canvas
+  updatedAt: { type: Date, default: Date.now },
+});
+const Drawing = mongoose.model("Drawing", DrawingSchema);
 
 io.on("connection", async (socket) => {
-  console.log(`User connected: ${socket.id}`);
-
-  // Fetch history
-  try {
-    const history = await Stroke.find().sort({ timestamp: 1 });
-    socket.emit("drawing_history", history);
-  } catch (err) {
-    console.error("History fetch error:", err.message);
+  // Load last saved drawing from DB
+  const savedDrawing = await Drawing.findOne().sort({ updatedAt: -1 });
+  if (savedDrawing) {
+    socket.emit("load-canvas", savedDrawing.canvasData);
   }
 
-  socket.on("join_workspace", (name) => {
-    socket.username = name;
-    console.log(`${name} joined`);
+  socket.on("draw-data", (data) => {
+    socket.broadcast.emit("draw-data", data);
   });
 
-  socket.on("drawing_data", (data) => {
-    socket.broadcast.emit("receive_drawing", data);
-    const newStroke = new Stroke(data);
-    newStroke.save().catch((err) => console.error("Save error:", err.message));
+  socket.on("cursor-move", (data) => {
+    socket.broadcast.emit("cursor-update", { ...data, id: socket.id });
   });
 
-  socket.on("cursor_move", (data) => {
-    socket.broadcast.emit("receive_cursor", {
-      ...data,
-      id: socket.id,
-      username: socket.username || "Guest",
-    });
-  });
-
-  socket.on("clear_board", async () => {
-    await Stroke.deleteMany({});
-    io.emit("clear_board_ui");
+  socket.on("save-to-db", async (dataURL) => {
+    await Drawing.findOneAndUpdate(
+      {},
+      { canvasData: dataURL, updatedAt: new Date() },
+      { upsert: true },
+    );
   });
 
   socket.on("disconnect", () => {
-    io.emit("user_disconnected", socket.id);
+    io.emit("user-left", socket.id);
   });
 });
 
-const PORT = process.env.PORT || 4000;
-server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+const PORT = process.env.PORT || 5000;
+server.listen(PORT, () => console.log(`Server active on port ${PORT}`));
